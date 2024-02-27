@@ -1,0 +1,67 @@
+### (17) Makie 数据可视化 ###
+
+# CairoMakie：主要是各种二维图，非动态。 能制作出版质量图形
+# GLMakie：利用OpenGL图形引擎功能， 性能强大，可以制作三维图形， 可以制作动态交互图形。 但不擅长制作矢量图
+# WGLMakie：支持在网页中的交互图形
+# RPRMakie：使用RadeonProRender引擎， 可以制作光线追踪图像
+
+# 使用 GLMakie 这个库来绘制 Lorenz 的图像，并将其保存为一个 mp4 视频文件
+using GLMakie   # All functionality is defined in Makie and every backend re-exports Makie
+
+# 定义一个可变的结构体 `Lorenz`，它包含 Lorenz 的一些参数和初始值
+# `dt`表示时间步长，`σ`、`ρ`和`β`是 Lorenz 的参数，`x`、`y`和`z`是 Lorenz 的初始值
+Base.@kwdef mutable struct Lorenz
+    dt::Float64 = 0.01
+    σ::Float64 = 10
+    ρ::Float64 = 28
+    β::Float64 = 8/3
+    x::Float64 = 1
+    y::Float64 = 1
+    z::Float64 = 1
+end
+
+# 定义了一个名为`step!`的函数，它接受一个`Lorenz`对象作为参数，并返回一个三维坐标点
+# 该函数用于计算 Lorenz 的下一个时间步的坐标，并更新`Lorenz`对象的状态
+function step!(l::Lorenz)
+    dx = l.σ * (l.y - l.x)
+    dy = l.x * (l.ρ - l.z) - l.y
+    dz = l.x * l.y - l.β * l.z
+    l.x += l.dt * dx
+    l.y += l.dt * dy
+    l.z += l.dt * dz
+    Point3f(l.x, l.y, l.z)
+end
+
+# 创建名为`attractor`的`Lorenz`对象，用于存储 Lorenz 的状态
+attractor = Lorenz()
+
+# 创建两个`Observable`对象，分别用于存储 Lorenz 的坐标点和每个点的颜色
+# `Observable`是一个特殊类型的变量，它可以通知图形界面在数据更新时进行相应的更新，从而提高绘图的效率
+points = Observable(Point3f[]) # Signal that can be used to update plots efficiently
+colors = Observable(Int[])
+
+# 使用`set_theme!(theme_black())`来设置绘图的主题为黑色
+set_theme!(theme_black())
+
+# 使用`lines`函数创建了一个三维坐标系，并将其保存为`fig`、`ax`和`l`三个变量。
+# `lines`函数用于创建一个三维线图，并返回一个包含图形元素的元组
+fig, ax, l = lines(points, color = colors,
+    colormap = :inferno, transparency = true, 
+    axis = (; type = Axis3, protrusions = (0, 0, 0, 0), 
+              viewmode = :fit, limits = (-30, 30, -30, 30, 0, 50)))
+
+# 使用`record`函数创建名为`lorenz.mp4`的视频文件，并将绘图的过程记录下来
+# `record`函数接受一个`Function`作为参数，该函数用于更新图形界面并将其保存为视频文件
+# 在`record`函数内部，使用一个`for`循环来更新 Lorenz 的状态
+# 每次循环中，调用`step!`函数来计算下一个时间步的坐标，并将其添加到`points`数组中
+# 同时，将当前帧数`frame`添加到`colors`数组中
+record(fig, "lorenz.mp4", 1:120) do frame
+    for i in 1:50
+        # update arrays inplace
+        push!(points[], step!(attractor))
+        push!(colors[], frame)
+    end
+    ax.azimuth[] = 1.7pi + 0.3 * sin(2pi * frame / 120) # set the view angle of the axis 使用`ax.azimuth[]`来设置三维坐标系的视角
+    notify(points); notify(colors) # tell points and colors that their value has been updated 使用`notify`函数通知`points`和`colors`数组的值已经更新
+    l.colorrange = (0, frame) # update plot attribute directly 使用`l.colorrange`来设置绘图的颜色范围
+end
